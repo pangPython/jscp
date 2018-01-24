@@ -1,9 +1,11 @@
 package cn.pangpython.jscp.server;
 
-import java.awt.image.DataBufferByte;
+
+import cn.pangpython.jscp.log.LogFactory;
+
+import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.FileInputStream;
-import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -11,6 +13,7 @@ import java.nio.channels.*;
 import java.util.HashMap;
 import java.util.Iterator;
 import java.util.Map;
+import java.util.logging.Logger;
 
 /**
  * 服务器端
@@ -18,65 +21,104 @@ import java.util.Map;
  *
  */
 public class JscpServer {
+    //    private static final Logger logger = Logger.getLogger(JscpServer.class.toString());
+    private static final Logger logger = LogFactory.getGlobalLog();
+
     private  Integer serverPort;
-    private ByteBuffer buffer = ByteBuffer.allocate(1024*1024);
+    private ByteBuffer buffer;
+    private Selector selector;
 
     private Map<SelectionKey, FileChannel> fileMap = new HashMap<>();
 
     public static void main(String[] args) throws IOException {
         JscpServer jscpServer = new JscpServer(8088);
-        jscpServer.start();
+        jscpServer.listen();
     }
 
     public JscpServer(Integer serverPort) {
         this.serverPort = serverPort;
     }
-    public void start() throws IOException {
-        //start server
-        Selector selector = Selector.open();
-        ServerSocketChannel serverChannel = ServerSocketChannel.open();
-        serverChannel.configureBlocking(false);
-        serverChannel.bind(new InetSocketAddress(serverPort));
-        serverChannel.register(selector, SelectionKey.OP_ACCEPT);
-        System.out.println("服务器已开启...");
+
+    public void init() {
+        buffer = ByteBuffer.allocate(1024 * 1024);
+        ServerSocketChannel serverSocketChannel;
+
+        try {
+            serverSocketChannel = ServerSocketChannel.open();
+            selector = Selector.open();
+            serverSocketChannel.configureBlocking(false);
+            serverSocketChannel.bind(new InetSocketAddress(serverPort));
+            serverSocketChannel.register(selector, SelectionKey.OP_ACCEPT);
+            System.out.println("********服务器已开启********");
+            logger.info("********服务器已开启********");
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+    }
+
+
+    public void listen() throws IOException {
+
         while (true) {
             int num = selector.select();
             if (num == 0) continue;
             Iterator<SelectionKey> it = selector.selectedKeys().iterator();
-            String filePath = null;
             while (it.hasNext()) {
                 SelectionKey key = it.next();
-                if (key.isAcceptable()) {
-                    ServerSocketChannel serverChannel1 = (ServerSocketChannel) key.channel();
-                    SocketChannel socketChannel = serverChannel1.accept();
-                    if (socketChannel == null) continue;
-                    //设置非阻塞
-                    socketChannel.configureBlocking(false);
-                    //注册
-                    socketChannel.register(selector, SelectionKey.OP_READ);
-                    System.out.println(socketChannel.getRemoteAddress() + "连接成功...");
-                    //get file path
-                    int len = 0;
-                    byte[] bytes = new byte[1024];
+                it.remove();
+                handleKey(key);
+            }
+        }
+    }
+
+    /**
+     * @param key
+     */
+    private void handleKey(SelectionKey key) throws IOException {
+        SocketChannel socketChannel = null;
+        String filePath = null;
+        try {
+            if (key.isAcceptable()) {
+                ServerSocketChannel serverChannel1 = (ServerSocketChannel) key.channel();
+                socketChannel = serverChannel1.accept();
+                if (socketChannel == null) return;
+                //设置非阻塞
+                socketChannel.configureBlocking(false);
+                //注册
+                socketChannel.register(selector, SelectionKey.OP_READ);
+                System.out.println(socketChannel.getRemoteAddress() + "连接成功...");
+                logger.info(socketChannel.getRemoteAddress() + "连接成功...");
+            } else if (key.isReadable()) {
+                socketChannel = (SocketChannel) key.channel();
+                //get file path
+                int len = 0;
+                byte[] bytes = null;
+                ByteArrayOutputStream byteArrayOutputStream = new ByteArrayOutputStream();
+                while ((len = socketChannel.read(buffer)) > 0) {
+                    buffer.flip();
+                    bytes = new byte[len];
+                    buffer.get(bytes);
+                    byteArrayOutputStream.write(bytes);
                     buffer.clear();
-                    while((len = socketChannel.read(buffer))!=-1){
-                        buffer.flip();
-                        buffer.get(bytes,0,len);
-                        filePath = new String(bytes, 0 ,len);
-                        System.out.println("get "+filePath);
-                        buffer.clear();
-                    }
+                }
+                filePath = new String(byteArrayOutputStream.toByteArray()).trim();
+                if (filePath != null && filePath != "" && filePath.length() != 0) {
+                    System.out.println("get " + filePath);
+                    logger.info("get " + filePath);
                     //发送文件
                     sendFile(filePath,socketChannel);
+
                     socketChannel.shutdownOutput();
                 }
-                if (key.isReadable()){
+            }else {
 
-                }
-                if(key.isWritable()){
+                socketChannel.close();
+            }
 
-                }
-                it.remove();
+        } catch (Throwable throwable) {
+            throwable.printStackTrace();
+            if (socketChannel != null) {
+                socketChannel.close();
             }
         }
     }
@@ -89,12 +131,16 @@ public class JscpServer {
      * @param socketChannel
      * @throws IOException
      */
-    private void sendFile(String filePath,SocketChannel socketChannel) throws IOException {
+    private void sendFile(String filePath, SocketChannel socketChannel) throws IOException {
+        long startTime = System.currentTimeMillis();
+        long fileSize = 0;
         ByteBuffer buffer = ByteBuffer.allocate(102400);
-        if(filePath != null){
-            System.out.printf("filePath:"+filePath);
+        if(filePath != null && filePath != "" && filePath.length() != 0) {
+            System.out.println("filePath:" + filePath);
+            logger.info("filePath:" + filePath);
             File file = new File(filePath);
             if(file.exists() && file.isFile()){
+                fileSize = file.length();
                 FileChannel fileChannel = new FileInputStream(file).getChannel();
                 int num2 = 0;
                 while ((num2=fileChannel.read(buffer)) >0) {
@@ -104,6 +150,9 @@ public class JscpServer {
                     }
                     buffer.clear();
                 }
+                fileChannel.force(true);
+                System.out.println("file " + filePath + " send success!");
+                logger.info("file " + filePath + " send success!");
                 if (num2 == -1) {
                     fileChannel.close();
 //                socketChannel.shutdownOutput();
@@ -111,40 +160,8 @@ public class JscpServer {
             }
 
         }
-    }
-
-    private void writeToClient(SocketChannel socketChannel) throws IOException {
-        buffer.clear();
-        buffer.put((socketChannel.getRemoteAddress() + "连接成功").getBytes());
-        buffer.flip();
-        socketChannel.write(buffer);
-        buffer.clear();
-    }
-    private void readData(SelectionKey key) throws IOException  {
-        FileChannel fileChannel = fileMap.get(key);
-        buffer.clear();
-        SocketChannel socketChannel = (SocketChannel) key.channel();
-        int num = 0;
-        try {
-            while ((num = socketChannel.read(buffer)) > 0) {
-                buffer.flip();
-                // 写入文件
-                fileChannel.write(buffer);
-                buffer.clear();
-            }
-        } catch (IOException e) {
-            key.cancel();
-            e.printStackTrace();
-            return;
-        }
-        // 调用close为-1 到达末尾
-        if (num == -1) {
-            fileChannel.close();
-            System.out.println("上传完毕");
-            buffer.put((socketChannel.getRemoteAddress() + "上传成功").getBytes());
-            buffer.clear();
-            socketChannel.write(buffer);
-            key.cancel();
-        }
+        long endTime = System.currentTimeMillis();
+        System.out.println("file " + filePath + " size:" + fileSize + " 耗时：" + (endTime - startTime) / 1000 + "s");
+        logger.info("file " + filePath + " size:" + fileSize + " 耗时：" + (endTime - startTime) / 1000 + "s");
     }
 }

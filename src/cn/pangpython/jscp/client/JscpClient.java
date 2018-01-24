@@ -1,5 +1,7 @@
 package cn.pangpython.jscp.client;
 
+import cn.pangpython.jscp.log.LogFactory;
+
 import java.io.File;
 import java.io.IOException;
 import java.io.RandomAccessFile;
@@ -7,9 +9,13 @@ import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.channels.SocketChannel;
+import java.util.logging.Logger;
 
 
 public class JscpClient {
+    //    private static final Logger logger = Logger.getLogger(JscpClient.class.toString());
+    private static final Logger logger = LogFactory.getGlobalLog();
+
     private  Integer port = 8088;
     private String serverIP;//服务器ip
     private String remoteFilePath;//请求的远程文件绝对路径
@@ -33,6 +39,7 @@ public class JscpClient {
         socketChannel.socket().connect(new InetSocketAddress(serverIP, port));
         ByteBuffer buffer = ByteBuffer.allocate(102400);
         buffer.clear();
+        logger.info("正在请求" + remoteFilePath);
         System.out.println("正在请求"+remoteFilePath);
         //发送文件路径请求文件
 
@@ -60,6 +67,7 @@ public class JscpClient {
             fileChannel.close();
         }
         System.out.println("文件接收完毕！");
+        logger.info("******文件接收完毕！******");
         socketChannel.close();
     }
 }
