@@ -10,8 +10,9 @@ import java.util.logging.Logger;
 
 /**
  *
+ *
  * java nio 实现 类似scp功能
- *  端口暂时使用
+ *  端口暂时使用8099
  */
 public class Main {
     private static final Logger logger = LogFactory.getGlobalLog();
