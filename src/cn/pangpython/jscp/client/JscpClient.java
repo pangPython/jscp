@@ -50,12 +50,15 @@ public class JscpClient {
         RandomAccessFile randomAccessFile = new RandomAccessFile(localDir+fileName, "rw");
         FileChannel fileChannel = randomAccessFile.getChannel();
         buffer.clear();
-        socketChannel.read(buffer);
-        buffer.flip();
-        while (buffer.hasRemaining()){
+        int num = 0;
+        while((num = socketChannel.read(buffer))>0){
+            buffer.flip();
             fileChannel.write(buffer);
+            buffer.clear();
         }
-        fileChannel.close();
+        if(num == -1){
+            fileChannel.close();
+        }
         System.out.println("文件接收完毕！");
         socketChannel.close();
     }

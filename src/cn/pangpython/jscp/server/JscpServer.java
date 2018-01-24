@@ -3,6 +3,7 @@ package cn.pangpython.jscp.server;
 import java.awt.image.DataBufferByte;
 import java.io.File;
 import java.io.FileInputStream;
+import java.io.FileNotFoundException;
 import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -19,9 +20,7 @@ import java.util.Map;
 public class JscpServer {
     private  Integer serverPort;
     private ByteBuffer buffer = ByteBuffer.allocate(1024*1024);
-    //使用Map保存每个连接，当OP_READ就绪时，
-    // 根据key找到对应的文件对其进行写入。
-    // 若将其封装成一个类，作为值保存，可以再上传过程中显示进度等等
+
     private Map<SelectionKey, FileChannel> fileMap = new HashMap<>();
 
     public static void main(String[] args) throws IOException {
@@ -33,6 +32,7 @@ public class JscpServer {
         this.serverPort = serverPort;
     }
     public void start() throws IOException {
+        //start server
         Selector selector = Selector.open();
         ServerSocketChannel serverChannel = ServerSocketChannel.open();
         serverChannel.configureBlocking(false);
@@ -43,6 +43,7 @@ public class JscpServer {
             int num = selector.select();
             if (num == 0) continue;
             Iterator<SelectionKey> it = selector.selectedKeys().iterator();
+            String filePath = null;
             while (it.hasNext()) {
                 SelectionKey key = it.next();
                 if (key.isAcceptable()) {
@@ -52,49 +53,64 @@ public class JscpServer {
                     //设置非阻塞
                     socketChannel.configureBlocking(false);
                     //注册
-                    SelectionKey key1 = socketChannel.register(selector, SelectionKey.OP_READ);
+                    socketChannel.register(selector, SelectionKey.OP_READ);
                     System.out.println(socketChannel.getRemoteAddress() + "连接成功...");
+                    //get file path
                     int len = 0;
                     byte[] bytes = new byte[1024];
-                    String filePath = null;
+                    buffer.clear();
                     while((len = socketChannel.read(buffer))!=-1){
                         buffer.flip();
                         buffer.get(bytes,0,len);
                         filePath = new String(bytes, 0 ,len);
-                        System.out.println(filePath);
+                        System.out.println("get "+filePath);
                         buffer.clear();
                     }
                     //发送文件
-                    if(filePath != null){
-                        File file = new File(filePath);
-                        FileChannel fileChannel = new FileInputStream(file).getChannel();
-                        ByteBuffer byteBuffer = ByteBuffer.allocate(1024);
-                        socketChannel.read(byteBuffer);
-                        byteBuffer.clear();
-                        int num2 = 0;
-                        while ((num2=fileChannel.read(buffer)) > 0) {
-                            buffer.flip();
-                            socketChannel.write(buffer);
-                            buffer.clear();
-                        }
-                        if (num2 == -1) {
-                            fileChannel.close();
-                            socketChannel.shutdownOutput();
-                        }
-                    }
+                    sendFile(filePath,socketChannel);
+                    socketChannel.shutdownOutput();
                 }
-                else if (key.isReadable()){
-                    readData(key);
+                if (key.isReadable()){
+
                 }
-                // NIO的特点只会累加，已选择的键的集合不会删除，ready集合会被清空
-                // 只是临时删除已选择键集合，当该键代表的通道上再次有感兴趣的集合准备好之后，又会被select函数选中
+                if(key.isWritable()){
+
+                }
                 it.remove();
             }
         }
     }
 
-    private void sendFile(){
+    /**
+     *
+     * send file to socketChannel
+     *
+     * @param filePath
+     * @param socketChannel
+     * @throws IOException
+     */
+    private void sendFile(String filePath,SocketChannel socketChannel) throws IOException {
+        ByteBuffer buffer = ByteBuffer.allocate(102400);
+        if(filePath != null){
+            System.out.printf("filePath:"+filePath);
+            File file = new File(filePath);
+            if(file.exists() && file.isFile()){
+                FileChannel fileChannel = new FileInputStream(file).getChannel();
+                int num2 = 0;
+                while ((num2=fileChannel.read(buffer)) >0) {
+                    buffer.flip();
+                    while (buffer.hasRemaining()){
+                        socketChannel.write(buffer);
+                    }
+                    buffer.clear();
+                }
+                if (num2 == -1) {
+                    fileChannel.close();
+//                socketChannel.shutdownOutput();
+                }
+            }
 
+        }
     }
 
     private void writeToClient(SocketChannel socketChannel) throws IOException {

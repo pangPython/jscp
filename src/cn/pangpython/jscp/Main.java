@@ -5,6 +5,7 @@ import cn.pangpython.jscp.server.JscpServer;
 
 import java.io.IOException;
 
+
 /**
  *
  * java nio 实现 类似scp功能
@@ -15,6 +16,7 @@ public class Main {
     public static void main(String[] args) {
         //如果有命令行参数说明是客户端 启动客户端模式
         if(args.length > 0){
+
             String serverIP = args[0];
             String remotePath = args[1];
             String localDir = args[2];
