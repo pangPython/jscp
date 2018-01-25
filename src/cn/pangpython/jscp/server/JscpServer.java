@@ -88,7 +88,7 @@ public class JscpServer {
                 socketChannel.register(selector, SelectionKey.OP_READ);
                 System.out.println(socketChannel.getRemoteAddress() + "连接成功...");
                 logger.info(socketChannel.getRemoteAddress() + "连接成功...");
-            } else if (key.isReadable()) {
+            } else if (key.isReadable()) {//读事件
                 socketChannel = (SocketChannel) key.channel();
                 //get file path
                 int len = 0;
@@ -110,9 +110,11 @@ public class JscpServer {
 
                     socketChannel.shutdownOutput();
                 }
-            }else {
-
                 socketChannel.close();
+            } else if (key.isWritable()) {//写事件
+
+            } else {
+
             }
 
         } catch (Throwable throwable) {
